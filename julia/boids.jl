@@ -5,28 +5,48 @@ using Plots
 mutable struct WorldState
     boids::Vector{Tuple{Float64, Float64}}
     vel_vector::Vector{Tuple{Float64, Float64}}
-    # vel_angle::Float64
-    # vel_module::Float64
+    vel_angle::Vector{Float64}
     height::Float64
     width::Float64
     function WorldState(n_boids, h, w)
+        vel_module=0.1
         boids = [(rand(0:w), rand(0:h)) for _ in 1:n_boids]
-        vel_vector = [(rand(-1:1), rand(1:1)) for _ in 1:n_boids]
-        # for k in 1:n_boids
-        #     vel_module =rand(0:0.1)
-        #     vel_angle = rand(-π:π)
-        #     vel_vector =  [Float64(vel_module * cos(vel_angle)), Float64(vel_module * sin(vel_angle))]
-        # end
-        new(boids, vel_vector, h, w)
+        vel_angle = [(rand() * 2π - π) for _ in 1:n_boids]
+        vel_vector = [(vel_module * cos(vel_angle[k]), vel_module * sin(vel_angle[k])) for k in 1:n_boids]
+        new(boids, vel_vector, vel_angle, h, w)
     end
 end
 
+function cohesion(position, n_boids, distance)
+    groups = [Array{Float64}[] for k in 1:n_boids]
+    # boids_x=sort(position[1])
+    # boids_y=sort(position[2])
+    println(typeof(groups))
+    println()
+    for k in 1:n_boids
+        x0=position[k][1]
+        y0=position[k][2]
+        for m in 1:n_boids
+            x=position[m][1]
+            y=position[m][2]
+            if (abs(x-x0) ≤ distance) && (abs(y-y0) ≤ distance) && m!=k 
+                neighbor = [x,y]
+                push!(groups, neighbor)
+            end
+        end
+        println(group)
+    end
+    return groups
+end
+
+
+
+
 function update!(state::WorldState, n_boids)
     for k in 1:n_boids
-        # state.boids[k] = state.boids[k] .+ state.vel_vector[k] 
         state.boids[k] = state.boids[k] .+ state.vel_vector[k] 
+        cohesion(state.boids, n_boids, 5)
     end
-    # TODO: 
     return nothing
 end
 
