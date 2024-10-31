@@ -12,14 +12,16 @@ mutable struct WorldState
     accel::Vector{Tuple{Float64, Float64}}
     height::Float64
     width::Float64
+    max_vel::Float64
     function WorldState(n_boids, h, w)
-        max_vel=1
-        vel_module= [(rand() * max_vel ) for _ in 1:n_boids]
+        max_vel = 0.5
+        # vel_module= [(rand() * max_vel ) for _ in 1:n_boids]
+        vel_module= [(max_vel) for _ in 1:n_boids]
         boids = [(rand(0:w), rand(0:h)) for _ in 1:n_boids]
         vel_angle = [(rand() * 2π - π) for _ in 1:n_boids]
         vel_vector = [(vel_module[k] * cos(vel_angle[k]), vel_module[k] * sin(vel_angle[k])) for k in 1:n_boids]
         accel = [(0.0, 0.0) for _ in 1:n_boids]
-        new(boids, vel_vector, vel_angle, vel_module, accel, h, w)
+        new(boids, vel_vector, vel_angle, vel_module, accel, h, w, max_vel)
     end
 end
 
@@ -34,7 +36,7 @@ function bros_detector(position, distance, k, m)
 end
 
 function velocity(state::WorldState, k)
-    state.vel_vector[k] = (state.vel_vector[k][1] - state.accel[k][1], state.vel_vector[k][2] - state.accel[k][2])
+    state.vel_vector[k] = (state.vel_vector[k][1] + state.accel[k][1], state.vel_vector[k][2] + state.accel[k][2])
     return nothing
 end
 
@@ -44,33 +46,53 @@ function cohesion(state::WorldState, position, grp_x, grp_y, k, max_accel)
     avg_x = sum_x / length(grp_x)
     avg_y = sum_y / length(grp_y)
     accel_angle = atan((avg_y - position[k][2])/(avg_x - position[k][1]))
-    accel = sqrt((avg_y - position[k][2])^2 + (avg_x - position[k][1])^2) * 0.4
-    if accel > max_accel
-        accel = max_accel
+    # accel = sqrt((avg_y - position[k][2])^2 + (avg_x - position[k][1])^2) * 0.4
+    accel = (avg_y - position[k][2], avg_x - position[k][1])
+    if sqrt((avg_y - position[k][2])^2 + (avg_x - position[k][1])^2) > max_accel
+        return (max_accel * cos(accel_angle), max_accel * sin(accel_angle))
     end
-    return (accel * cos(accel_angle), accel * sin(accel_angle))
+    # return (accel * cos(accel_angle), accel * sin(accel_angle))
+    return accel
 end
 
+function maxspeed(state::WorldState, k)
+    speed = sqrt(state.vel_vector[k][1]^2 + state.vel_vector[k][2]^2)
+    if speed > state.max_vel
+        scale = state.max_vel / speed
+        state.vel_vector[k] = (state.vel_vector[k][1] * scale, 
+                               state.vel_vector[k][2] * scale)
+    end
+    return nothing
+end
 
 function borders(state::WorldState, k)
-    if state.boids[k][1] ≥ state.width || state.boids[k][1] ≤ 0
+    if state.boids[k][1] ≥ state.width
         state.vel_vector[k] = (-state.vel_vector[k][1], state.vel_vector[k][2])
+        state.boids[k] = (state.width - 0.1, state.boids[k][2]) 
+    elseif state.boids[k][1] ≤ 0
+        state.vel_vector[k] = (-state.vel_vector[k][1], state.vel_vector[k][2])
+        state.boids[k] = (0.1, state.boids[k][2]) 
     end
-    if state.boids[k][2] ≥ state.height || state.boids[k][2] ≤ 0
+
+    if state.boids[k][2] ≥ state.height
         state.vel_vector[k] = (state.vel_vector[k][1], -state.vel_vector[k][2])
+        state.boids[k] = (state.boids[k][1], state.height - 0.1) 
+    elseif state.boids[k][2] ≤ 0
+        state.vel_vector[k] = (state.vel_vector[k][1], -state.vel_vector[k][2])
+        state.boids[k] = (state.boids[k][1], 0.1) 
     end
     return nothing
 end
 
 function update!(state::WorldState, n_boids)
     for k in 1:n_boids
+        borders(state, k) 
         state.boids[k] = state.boids[k] .+ state.vel_vector[k] 
-        borders(state, k)
     end
 
-    distance = 10
-    weight_coh = 1
-    max_accel = 0.05
+    distance = 6
+    weight_coh = 0.05
+    max_accel = 0.5
     for k in 1:n_boids
         groups_x = Float64[]
         groups_y = Float64[]
@@ -84,6 +106,7 @@ function update!(state::WorldState, n_boids)
         if isempty(groups_x) == 0
             state.accel[k] = (cohesion(state, state.boids, groups_x, groups_y, k, max_accel) .* weight_coh)
             velocity(state, k)
+            maxspeed(state, k)
         end
     end
     return nothing
@@ -92,7 +115,7 @@ end
 function (@main)(ARGS)
     h = 30
     w = 30
-    n_boids = 2
+    n_boids = 30
     state = WorldState(n_boids, h, w)
     anim = @animate for time = 1:100
         update!(state, n_boids)
