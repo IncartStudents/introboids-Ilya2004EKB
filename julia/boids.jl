@@ -14,7 +14,7 @@ mutable struct WorldState
     width::Float64
     max_vel::Float64
     function WorldState(n_boids, h, w)
-        max_vel = 0.5
+        max_vel = 0.7
         # vel_module= [(rand() * max_vel ) for _ in 1:n_boids]
         vel_module= [(max_vel) for _ in 1:n_boids]
         boids = [(rand(0:w), rand(0:h)) for _ in 1:n_boids]
@@ -59,8 +59,7 @@ function maxspeed(state::WorldState, k)
     speed = sqrt(state.vel_vector[k][1]^2 + state.vel_vector[k][2]^2)
     if speed > state.max_vel
         scale = state.max_vel / speed
-        state.vel_vector[k] = (state.vel_vector[k][1] * scale, 
-                               state.vel_vector[k][2] * scale)
+        state.vel_vector[k] = (state.vel_vector[k][1] * scale, state.vel_vector[k][2] * scale)
     end
     return nothing
 end
@@ -90,7 +89,7 @@ function update!(state::WorldState, n_boids)
         state.boids[k] = state.boids[k] .+ state.vel_vector[k] 
     end
 
-    distance = 6
+    distance = 4
     weight_coh = 0.05
     max_accel = 0.5
     for k in 1:n_boids
@@ -113,11 +112,11 @@ function update!(state::WorldState, n_boids)
 end
 
 function (@main)(ARGS)
-    h = 30
-    w = 30
-    n_boids = 30
+    h = 50
+    w = 50
+    n_boids = 50
     state = WorldState(n_boids, h, w)
-    anim = @animate for time = 1:100
+    anim = @animate for time = 1:200
         update!(state, n_boids)
         boids = state.boids
         scatter(boids, xlim = (0, state.width), ylim = (0, state.height))
