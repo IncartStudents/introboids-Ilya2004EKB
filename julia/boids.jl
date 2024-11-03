@@ -50,7 +50,7 @@ function velocity(state::WorldState, k)
     elseif (x < 0 && y > 0) 
         angle = -angle + π/2
     end
-    state.vel_angle[k] = (angle)
+    state.vel_angle[k] = angle
     return nothing
 end
 
@@ -97,19 +97,17 @@ end
 function alignment(state::WorldState, k, accel_vec, grp_angle, weight_al)
     x = accel_vec[1]
     y = accel_vec[2]
-    accel_angle = atan(x/y)
     accel = sqrt(x^2 + y^2)
     sum_al = sum(grp_angle)
-    avg_al = sum_al / length(grp_angle) * weight_al
-    # println(k, ": ", position[k][1],  ' ', position[k][2],  ' ', avg_x, ' ', avg_y, ' ', accel_angle/π*360)
+    adj_angle = (sum_al / length(grp_angle)) * weight_al
+    accel_angle = atan(y/x)
     if (x < 0 && y < 0)
         accel_angle = -accel_angle - π/2
     elseif (x < 0 && y > 0) 
         accel_angle = -accel_angle + π/2
     end
-    accel = (x, y)
-    return (accel * cos(accel_angle), accel * sin(accel_angle))
-    end
+    angle = accel_angle + adj_angle
+    return (accel * cos(angle), accel * sin(angle))
 end
 
 function compare(a,b,a_weight, b_weight)
@@ -159,8 +157,8 @@ function update!(state::WorldState, n_boids)
     end
 
     distance = 20
-    weight_coh = 0.5
-    weight_sep = 0.5
+    weight_coh = 0.0001
+    weight_sep = 0.0001
     weight_al = 0.5
 
     max_accel = 1
@@ -178,14 +176,14 @@ function update!(state::WorldState, n_boids)
             end
         end
         if isempty(groups_x) == 0
-            sort!(groups_x)
-            sort!(groups_y)
             coh = cohesion(state, state.boids, groups_x, groups_y, k, max_accel)
             sep = separation(state, k, max_accel)
             # println(coh, ' ', k)
             # println()
-            state.accel[k] = compare(coh, sep, weight_coh, weight_sep)
-            al = alignment(state, k, state.accel[k], groups_angle, weight_al)
+            acceleration = compare(coh, sep, weight_coh, weight_sep)
+            println(acceleration)
+            al = alignment(state, k, acceleration, groups_angle, weight_al)
+            state.accel[k] = al 
             # state.accel[k] = (cohesion(state, state.boids, groups_x, groups_y, k, max_accel) .* weight_coh)
             velocity(state, k)
             maxspeed(state, k)
