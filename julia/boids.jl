@@ -15,7 +15,7 @@ mutable struct WorldState
     max_vel::Float64
     closest_bro::Vector{Tuple{Float64, Float64}}
     function WorldState(n_boids, h, w)
-        max_vel = 0.5
+        max_vel = 2
         # vel_module= [(rand() * max_vel ) for _ in 1:n_boids]
         vel_module= [(max_vel) for _ in 1:n_boids]
         boids = [(rand(0:w), rand(0:h)) for _ in 1:n_boids]
