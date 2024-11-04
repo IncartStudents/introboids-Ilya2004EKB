@@ -36,21 +36,13 @@ function bros_detector(state::WorldState, position, distance, k, m, sep_fact)
         if sqrt((x - x0)^2 + (y - y0)^2) ≤ sep_fact
             state.closest_bro[k]= (x0 - x, y0 - y)
         end
-        return [x, y, state.vel_angle[k]]
+        return [x, y, state.vel_vector[m][1], state.vel_vector[m][2]]
     end
 end
 
-function velocity(state::WorldState, k)
+function velocity(state::WorldState, k, alignment, weight_al)
     state.vel_vector[k] = (state.vel_vector[k][1] + state.accel[k][1], state.vel_vector[k][2] + state.accel[k][2])
-    x=state.vel_vector[k][1]
-    y=state.vel_vector[k][2]
-    angle = tan(y/x)
-    if (x < 0 && y < 0)
-        angle = -angle - π/2
-    elseif (x < 0 && y > 0) 
-        angle = -angle + π/2
-    end
-    state.vel_angle[k] = angle
+    # println(k, ' ',x, ' ', y, ' ',  state.vel_angle[k])
     return nothing
 end
 
@@ -61,64 +53,50 @@ function cohesion(state::WorldState, position, grp_x, grp_y, k, max_accel)
     avg_y = sum_y / length(grp_y)
     rx = avg_x - position[k][1]
     ry = avg_y - position[k][2]
-    tan = (avg_y - position[k][2])/(avg_x - position[k][1])
-    accel_angle = atan(tan)
-    if (rx < 0 && ry < 0)
-        accel_angle = -accel_angle - π/2
-    elseif (rx < 0 && ry > 0) 
-        accel_angle = -accel_angle + π/2
-    end
-    # println(k, ": ", position[k][1],  ' ', position[k][2],  ' ', avg_x, ' ', avg_y, ' ', accel_angle/π*360)
-    accel = sqrt((avg_y - position[k][2])^2 + (avg_x - position[k][1])^2)
-    if sqrt(accel) > max_accel
-        return (max_accel * cos(accel_angle), max_accel * sin(accel_angle))
-    end
-    return (accel * cos(accel_angle), accel * sin(accel_angle))
+    return (rx, ry)
 end
 
 function separation(state::WorldState, k, max_accel)
     if isnan(state.closest_bro[k][1]) == 0 
         x = state.closest_bro[k][1]
         y = state.closest_bro[k][2]
-        accel_angle = atan(x/y)
-        if (x < 0 && y < 0)
-            accel_angle = -accel_angle - π/2
-        elseif (x < 0 && y > 0) 
-            accel_angle = -accel_angle + π/2
-        end
-        accel = sqrt(x^2 + y^2)
-        if sqrt(x^2 + y^2) > max_accel
-            return (max_accel * cos(accel_angle), max_accel * sin(accel_angle))
-        end
-        return (accel * cos(accel_angle), accel * sin(accel_angle))
+        return (x, y)
     end
 end
     
-function alignment(state::WorldState, k, accel_vec, grp_angle, weight_al)
-    x = accel_vec[1]
-    y = accel_vec[2]
-    accel = sqrt(x^2 + y^2)
-    sum_al = sum(grp_angle)
-    adj_angle = (sum_al / length(grp_angle)) * weight_al
-    accel_angle = atan(y/x)
-    if (x < 0 && y < 0)
-        accel_angle = -accel_angle - π/2
-    elseif (x < 0 && y > 0) 
-        accel_angle = -accel_angle + π/2
-    end
-    angle = accel_angle + adj_angle
-    return (accel * cos(angle), accel * sin(angle))
+
+function alignment(state::WorldState, k, grp_vel_x, grp_vel_y)
+    sum_x = sum(grp_vel_x) 
+    sum_y = sum(grp_vel_y) 
+    avg_x = sum_x / length(grp_vel_x)
+    avg_y = sum_y / length(grp_vel_x)
+    adj_x = avg_x - state.vel_vector[k][1]
+    adj_y = avg_y - state.vel_vector[k][2]
+    return (adj_x, adj_y)
 end
 
-function compare(a,b,a_weight, b_weight)
+function compare(a,b,c,a_weight, b_weight,c_weight, max_accel)
     if isnothing(a) 
         a = (0.0 , 0.0)
     end
     if isnothing(b)
         b = (0.0 , 0.0)
     end
-
-    return ((a[1] * a_weight + b[1] * b_weight) / 2, (a[2] * a_weight + b[2] * b_weight) / 2)
+    if isnothing(c)
+        c = (0.0 , 0.0)
+    end
+    x = (a[1] * a_weight + b[1] * b_weight + c[1] * c_weight) / 3
+    y = (a[2] * a_weight + b[2] * b_weight + c[2] * c_weight) / 3
+    accel_angle = atan(x/y)
+    if (x < 0 && y < 0)
+        accel_angle = -accel_angle - π/2
+    elseif (x < 0 && y > 0) 
+        accel_angle = -accel_angle + π/2
+    end
+    if sqrt(x^2 + y^2) > max_accel
+        return (max_accel * cos(accel_angle), max_accel * sin(accel_angle))
+    end
+    return (x, y)
 end
 
 function maxspeed(state::WorldState, k)
@@ -156,23 +134,26 @@ function update!(state::WorldState, n_boids)
         state.boids[k] = state.boids[k] .+ state.vel_vector[k] 
     end
 
-    distance = 20
-    weight_coh = 0.0001
-    weight_sep = 0.0001
-    weight_al = 0.5
-
-    max_accel = 1
+    distance = 30
     sep_fact = 2
+
+    weight_coh = 1
+    weight_sep = 0
+    weight_al = 0
+
+    max_accel = 0.5
     for k in 1:n_boids
         groups_x = Float64[]
         groups_y = Float64[]
-        groups_angle = Float64[]
+        groups_vel_x =Float64[]
+        groups_vel_y =Float64[]
         for m in 1:n_boids
             bros = bros_detector(state, state.boids, distance, k, m, sep_fact) 
             if bros !== nothing
                 push!(groups_x, bros[1])
                 push!(groups_y, bros[2])
-                push!(groups_angle, bros[3])
+                push!(groups_vel_x, bros[3])
+                push!(groups_vel_y, bros[4])
             end
         end
         if isempty(groups_x) == 0
@@ -180,12 +161,11 @@ function update!(state::WorldState, n_boids)
             sep = separation(state, k, max_accel)
             # println(coh, ' ', k)
             # println()
-            acceleration = compare(coh, sep, weight_coh, weight_sep)
-            println(acceleration)
-            al = alignment(state, k, acceleration, groups_angle, weight_al)
-            state.accel[k] = al 
+            al = alignment(state, k, groups_vel_x, groups_vel_y)
+            acceleration = compare(coh, sep, al, weight_coh, weight_sep, weight_al, max_accel)
+            state.accel[k] = acceleration 
             # state.accel[k] = (cohesion(state, state.boids, groups_x, groups_y, k, max_accel) .* weight_coh)
-            velocity(state, k)
+            velocity(state, k, al, weight_al)
             maxspeed(state, k)
         end
     end
@@ -195,7 +175,7 @@ end
 function (@main)(ARGS)
     h = 50
     w = 50
-    n_boids =  100
+    n_boids =  50
     state = WorldState(n_boids, h, w)
     anim = @animate for time = 1:100
         update!(state, n_boids)
