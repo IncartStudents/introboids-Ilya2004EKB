@@ -134,12 +134,12 @@ function update!(state::WorldState, n_boids)
         state.boids[k] = state.boids[k] .+ state.vel_vector[k] 
     end
 
-    distance = 30
+    distance = 6
     sep_fact = 2
 
-    weight_coh = 1
-    weight_sep = 0
-    weight_al = 0
+    weight_coh = 0.4
+    weight_sep = 2
+    weight_al = 0.5
 
     max_accel = 0.5
     for k in 1:n_boids
