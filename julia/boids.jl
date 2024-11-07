@@ -7,178 +7,180 @@ using Statistics
 mutable struct WorldState
     boids::Vector{Tuple{Float64, Float64}}
     vel_vector::Vector{Tuple{Float64, Float64}}
-    vel_angle::Vector{Float64}
-    vel_module::Vector{Float64}
     accel::Vector{Tuple{Float64, Float64}}
     height::Float64
     width::Float64
     max_vel::Float64
-    closest_bro::Vector{Tuple{Float64, Float64}}
-    function WorldState(n_boids, h, w)
-        max_vel = 2
-        # vel_module= [(rand() * max_vel ) for _ in 1:n_boids]
-        vel_module= [(max_vel) for _ in 1:n_boids]
+    max_accel::Float64
+    distance::Float64
+    weight_al::Float64
+    weight_coh::Float64
+    weight_sep::Float64
+    n_boids::Int64
+    function WorldState(h, w)
+        max_vel = 1 
+        n_boids = 2
+        max_accel = 1
+        distance = 8
+        weight_coh = 0
+        weight_sep = 0
+        weight_al = 0.9
         boids = [(rand(0:w), rand(0:h)) for _ in 1:n_boids]
         vel_angle = [(rand() * 2π - π) for _ in 1:n_boids]
-        vel_vector = [(vel_module[k] * cos(vel_angle[k]), vel_module[k] * sin(vel_angle[k])) for k in 1:n_boids]
+        vel_vector = [(max_vel * cos(vel_angle[k]), max_vel * sin(vel_angle[k])) for k in 1:n_boids]
         accel = [(0.0, 0.0) for _ in 1:n_boids]
-        closest_bro = [(NaN, NaN) for _ in 1:n_boids]
-        new(boids, vel_vector, vel_angle, vel_module, accel, h, w, max_vel, closest_bro)
+        new(boids, vel_vector, accel, h, w, max_vel, max_accel, distance, 
+        weight_al, weight_coh, weight_sep,n_boids)
     end
 end
 
-function bros_detector(state::WorldState, position, distance, k, m, sep_fact)
+function bros_detector(state::WorldState, k, m)
+    position = state.boids
     x0=position[k][1]
     y0=position[k][2]
     x=position[m][1]
     y=position[m][2]
-    if (abs(x-x0) ≤ distance) && (abs(y-y0) ≤ distance) && m!=k 
-        if sqrt((x - x0)^2 + (y - y0)^2) ≤ sep_fact
-            state.closest_bro[k]= (x0 - x, y0 - y)
-        end
-        return [x, y, state.vel_vector[m][1], state.vel_vector[m][2]]
+    if (sqrt((x - x0)^2 + (y - y0)^2) ≤ state.distance) && m!=k 
+        return true
+    else
+        return false
     end
 end
 
-function velocity(state::WorldState, k, alignment, weight_al)
-    state.vel_vector[k] = (state.vel_vector[k][1] + state.accel[k][1], state.vel_vector[k][2] + state.accel[k][2])
-    # println(k, ' ',x, ' ', y, ' ',  state.vel_angle[k])
+function velocity(state::WorldState)
+    n_boids = state.n_boids
+    for k in 1:n_boids
+        scale = sqrt((state.accel[k][2])^2 + ((state.accel[k][1])^2)) / state.max_accel
+        if sqrt((state.accel[k][2])^2 + ((state.accel[k][1])^2)) > state.max_accel
+            state.accel[k] = (state.accel[k][1] / scale^2 , state.accel[k][2] / scale^2 )
+        state.vel_vector[k] = (state.vel_vector[k][1] + state.accel[k][1], state.vel_vector[k][2] + state.accel[k][2])  
+        end
+    end
     return nothing
 end
 
-function cohesion(state::WorldState, position, grp_x, grp_y, k, max_accel)
-    sum_x = sum(grp_x)
-    sum_y = sum(grp_y)
-    avg_x = sum_x / length(grp_x)
-    avg_y = sum_y / length(grp_y)
-    rx = avg_x - position[k][1]
-    ry = avg_y - position[k][2]
-    return (rx, ry)
+function cohesion(state::WorldState)
+    position = state.boids
+    n_boids = state.n_boids
+    for k in 1:n_boids
+        sum_x=0
+        sum_y=0
+        count = 0 
+        for m in 1:n_boids
+            if bros_detector(state, k,m) 
+                sum_x = sum_x + position[m][1]
+                sum_y = sum_y + position[m][2]
+                count+=1 
+            end
+        end
+    avg_x = sum_x / count 
+    avg_y = sum_y / count 
+    ax = avg_x - position[k][1]
+    ay = avg_y - position[k][2]
+    state.accel[k] = (state.accel[k][1] + ax * state.weight_coh, state.accel[k][2] + ay * state.weight_coh)
+    end
+    return nothing
 end
 
-function separation(state::WorldState, k, max_accel)
-    if isnan(state.closest_bro[k][1]) == 0 
-        x = state.closest_bro[k][1]
-        y = state.closest_bro[k][2]
-        return (x, y)
+function separation(state::WorldState)
+    position = state.boids
+    n_boids = state.n_boids
+    for k in 1:n_boids 
+        sum_x=0
+        sum_y=0
+        count = 0
+        for m in 1:n_boids
+            if bros_detector(state, k, m) 
+                sum_x = sum_x + position[m][1]
+                sum_y = sum_y + position[m][2]
+                count+=1 
+            end
+        end
+    avg_x = sum_x / count 
+    avg_y = sum_y / count 
+    ax = -(avg_x - position[k][1])
+    ay = -(avg_y - position[k][2])
+    state.accel[k] = (state.accel[k][1] + ax * state.weight_sep, state.accel[k][2] + ay * state.weight_sep)
     end
 end
     
 
-function alignment(state::WorldState, k, grp_vel_x, grp_vel_y)
-    sum_x = sum(grp_vel_x) 
-    sum_y = sum(grp_vel_y) 
-    avg_x = sum_x / length(grp_vel_x)
-    avg_y = sum_y / length(grp_vel_x)
-    adj_x = avg_x - state.vel_vector[k][1]
-    adj_y = avg_y - state.vel_vector[k][2]
-    return (adj_x, adj_y)
-end
-
-function compare(a,b,c,a_weight, b_weight,c_weight, max_accel)
-    if isnothing(a) 
-        a = (0.0 , 0.0)
-    end
-    if isnothing(b)
-        b = (0.0 , 0.0)
-    end
-    if isnothing(c)
-        c = (0.0 , 0.0)
-    end
-    x = (a[1] * a_weight + b[1] * b_weight + c[1] * c_weight) / 3
-    y = (a[2] * a_weight + b[2] * b_weight + c[2] * c_weight) / 3
-    accel_angle = atan(x/y)
-    if (x < 0 && y < 0)
-        accel_angle = -accel_angle - π/2
-    elseif (x < 0 && y > 0) 
-        accel_angle = -accel_angle + π/2
-    end
-    if sqrt(x^2 + y^2) > max_accel
-        return (max_accel * cos(accel_angle), max_accel * sin(accel_angle))
-    end
-    return (x, y)
-end
-
-function maxspeed(state::WorldState, k)
-    speed = sqrt(state.vel_vector[k][1]^2 + state.vel_vector[k][2]^2)
-    if speed > state.max_vel
-        scale = state.max_vel / speed
-        state.vel_vector[k] = (state.vel_vector[k][1] * scale, state.vel_vector[k][2] * scale)
-    end
-    return nothing
-end
-
-function borders(state::WorldState, k)
-    if state.boids[k][1] ≥ state.width
-        state.vel_vector[k] = (-state.vel_vector[k][1], state.vel_vector[k][2])
-        state.boids[k] = (state.width - 0.1, state.boids[k][2]) 
-    elseif state.boids[k][1] ≤ 0
-        state.vel_vector[k] = (-state.vel_vector[k][1], state.vel_vector[k][2])
-        state.boids[k] = (0.1, state.boids[k][2]) 
-    end
-
-    if state.boids[k][2] ≥ state.height
-        state.vel_vector[k] = (state.vel_vector[k][1], -state.vel_vector[k][2])
-        state.boids[k] = (state.boids[k][1], state.height - 0.1) 
-    elseif state.boids[k][2] ≤ 0
-        state.vel_vector[k] = (state.vel_vector[k][1], -state.vel_vector[k][2])
-        state.boids[k] = (state.boids[k][1],  0.1) 
-    end
-    return nothing
-end
-
-function update!(state::WorldState, n_boids)
-    state.closest_bro = [(NaN, NaN) for _ in 1:n_boids]
-    for k in 1:n_boids
-        borders(state, k) 
-        state.boids[k] = state.boids[k] .+ state.vel_vector[k] 
-    end
-
-    distance = 6
-    sep_fact = 2
-
-    weight_coh = 0.4
-    weight_sep = 2
-    weight_al = 0.5
-
-    max_accel = 0.5
-    for k in 1:n_boids
-        groups_x = Float64[]
-        groups_y = Float64[]
-        groups_vel_x =Float64[]
-        groups_vel_y =Float64[]
+function alignment(state::WorldState)
+    n_boids = state.n_boids
+    for k in 1:n_boids 
+        sum_x=0
+        sum_y=0 
+        count=0
         for m in 1:n_boids
-            bros = bros_detector(state, state.boids, distance, k, m, sep_fact) 
-            if bros !== nothing
-                push!(groups_x, bros[1])
-                push!(groups_y, bros[2])
-                push!(groups_vel_x, bros[3])
-                push!(groups_vel_y, bros[4])
+            if bros_detector(state, k, m) 
+                sum_x = sum_x + state.vel_vector[m][1]
+                sum_y = sum_y + state.vel_vector[m][2]
+                count+=1 
             end
         end
-        if isempty(groups_x) == 0
-            coh = cohesion(state, state.boids, groups_x, groups_y, k, max_accel)
-            sep = separation(state, k, max_accel)
-            # println(coh, ' ', k)
-            # println()
-            al = alignment(state, k, groups_vel_x, groups_vel_y)
-            acceleration = compare(coh, sep, al, weight_coh, weight_sep, weight_al, max_accel)
-            state.accel[k] = acceleration 
-            # state.accel[k] = (cohesion(state, state.boids, groups_x, groups_y, k, max_accel) .* weight_coh)
-            velocity(state, k, al, weight_al)
-            maxspeed(state, k)
+        avg_x = sum_x / count
+        avg_y = sum_y / count
+        ax = avg_x + state.vel_vector[k][1]
+        ay = avg_y + state.vel_vector[k][2]
+        state.accel[k] = (state.accel[k][1] + ax * state.weight_al, state.accel[k][2] + ay * state.weight_al)
+    end
+    return nothing
+end
+
+
+function maxspeed(state::WorldState)
+    for k in 1:state.n_boids
+    speed = sqrt(state.vel_vector[k][1]^2 + state.vel_vector[k][2]^2)
+        if speed > state.max_vel
+            scale = state.max_vel / speed
+            state.vel_vector[k] = (state.vel_vector[k][1] * scale^2, state.vel_vector[k][2] * scale^2)
+        end
+    end 
+    return nothing
+end
+
+function borders(state::WorldState)
+    for k in 1:state.n_boids
+        if state.boids[k][1] ≥ state.width
+            state.vel_vector[k] = (-state.vel_vector[k][1], state.vel_vector[k][2])
+            state.boids[k] = (state.width - 0.1, state.boids[k][2]) 
+        elseif state.boids[k][1] ≤ 0
+            state.vel_vector[k] = (-state.vel_vector[k][1], state.vel_vector[k][2])
+            state.boids[k] = (0.1, state.boids[k][2]) 
+        end
+
+        if state.boids[k][2] ≥ state.height
+            state.vel_vector[k] = (state.vel_vector[k][1], -state.vel_vector[k][2])
+            state.boids[k] = (state.boids[k][1], state.height - 0.1) 
+        elseif state.boids[k][2] ≤ 0
+            state.vel_vector[k] = (state.vel_vector[k][1], -state.vel_vector[k][2])
+            state.boids[k] = (state.boids[k][1],  0.1) 
         end
     end
     return nothing
+end
+
+function update!(state::WorldState)
+    n_boids = state.n_boids
+    for k in 1:n_boids
+        borders(state) 
+        state.boids[k] = state.boids[k] .+ state.vel_vector[k] 
+        state.accel[k] = (0.0, 0.0)
+    end
+    cohesion(state)
+    separation(state)
+    alignment(state)
+    velocity(state)
+    maxspeed(state)
+    return nothing 
 end
 
 function (@main)(ARGS)
-    h = 50
-    w = 50
-    n_boids =  50
-    state = WorldState(n_boids, h, w)
+    h = 10
+    w = 10
+    state = WorldState(h, w)
     anim = @animate for time = 1:100
-        update!(state, n_boids)
+        update!(state)
         boids = state.boids
         scatter(boids, xlim = (0, state.width), ylim = (0, state.height))
     end
